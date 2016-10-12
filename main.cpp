@@ -47,15 +47,37 @@ protected:
     std::condition_variable m_cond;
 };
 
+class serial_writer {
+public:
+    serial_writer() {
+        m_wThread = std::make_unique<std::thread>([this]{
+            std::string msg;
+            while (m_messages.read(msg)) {
+                std::cout << msg << std::flush;
+            }
+        });
+    }
+    ~serial_writer() { m_messages.close(); }
+
+    void print(std::string s) {
+        m_messages.write(s);
+    }
+
+protected:
+    channel<std::string> m_messages;
+    std::unique_ptr<std::thread> m_wThread;
+};
+
 int main()
 {
     channel<std::string> chan;
+    serial_writer w;
     std::vector<std::unique_ptr<std::thread>> threads;
     constexpr int N = 10;
     for (int i = 0; i < N; ++i) {
-        threads.push_back(std::make_unique<std::thread>([&chan,i]{
+        threads.push_back(std::make_unique<std::thread>([&chan,i,&w]{
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            std::cout << "Writing " << i << " to channel" << std::endl;
+            w.print("Writing " + std::to_string(i) + " to channel\n");
             chan.write(std::to_string(i));
         }));
     }
@@ -69,7 +91,7 @@ int main()
     std::string tmp;
     int itemsRead = 0;
     while (chan.read(tmp)) {
-        std::cout << "Read " << tmp << " from channel" << std::endl;
+        w.print("Read " + tmp + " from channel\n");
         ++itemsRead;
         if (N == itemsRead) {
             chan.close();
