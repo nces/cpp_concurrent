@@ -17,9 +17,13 @@ public:
 	virtual bool test() = 0;
 };
 
+/**
+ * Aims to be similar to a "Go channel" where only reading and writing to the channel happens in serial.
+ */
 template<typename T>
 class channel {
 public:
+    // Put an element in the channel
     void write(T i) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -29,6 +33,11 @@ public:
         m_cond.notify_one();
     }
 
+    // Read an element in the channel. If the channel is empty and not closed, this call will block the current thread
+    // until an item is put in the channel. If there are multiple threads blocked by read, it is up to the OS's thread
+    // scheduler to determine which thread will get the next item in the channel.
+    //
+    // @return true if the channel is still open, false otherwise
     bool read(T& i) {
         std::unique_lock<std::mutex> lock(m_mutex);
 
@@ -51,13 +60,15 @@ public:
         }
     }
 
+    // Closes the channel.
     void close() {
         m_closed = true;
-        m_cond.notify_one();
+        m_cond.notify_all();
     }
 
     bool empty() const { return m_queue.empty(); }
 
+    // Add a test via dependency injection
     void setTest(TestChannel<T>* t) { m_test = t; }
 
 protected:
@@ -69,6 +80,7 @@ protected:
     TestChannel<T>* m_test = nullptr; // non-managed pointer
 };
 
+// A simple usage of channel to make sure messages from multiple threads are readable (i.e., do not overlap one another)
 class serial_writer {
 public:
     serial_writer() {
